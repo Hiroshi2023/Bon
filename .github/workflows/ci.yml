@@ -1,4 +1,4 @@
-name: CI Pipeline
+name: ML Pipeline CI/CD
 
 on:
   push:
@@ -7,43 +7,82 @@ on:
     branches: [ main ]
 
 jobs:
-  test-and-train:
+  train-validate-deploy:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./src
 
     steps:
-      # Étape 1 : Checkout du code
+      # --- Étape 1 : Setup ---
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Étape 2 : Configuration de Python
-      - name: Set up Python
+      - name: Set up Python 3.9
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      # Étape 3 : Installer les dépendances
       - name: Install dependencies
         run: |
           pip install -r ../requirements.txt
-          pip install torch sklearn pandas seaborn matplotlib
+          pip install torch scikit-learn pandas huggingface_hub gradio mkdocs-material
 
-      # Étape 4 : Exécuter le prétraitement des données
-      - name: Run data processing
-        run: python data_processing.py
-        env:
-          DATA_PATH: ../data/diamonds.csv
-
-      # Étape 5 : Entraîner le modèle
+      # --- Étape 2 : Entraînement et validation ---
       - name: Train model
         run: python model_training.py
         env:
           MODEL_SAVE_PATH: ../models/diamond_price_predictor.pth
 
-      # Étape 6 : Évaluer le modèle
       - name: Evaluate model
         run: python model_evaluation.py
         env:
           MODEL_PATH: ../models/diamond_price_predictor.pth
+
+      # --- Étape 3 : Déploiement sur Hugging Face ---
+      - name: Deploy to Hugging Face
+        if: github.ref == 'refs/heads/main'
+        run: |
+          python -c "
+          from huggingface_hub import HfApi, ModelCard
+          import torch
+          import joblib
+
+          # 1. Préparer le dossier du modèle
+          model = torch.load('../models/diamond_price_predictor.pth')
+          model.save_pretrained('./hf_model')
+          joblib.dump(scaler, './hf_model/scaler.joblib')
+
+          # 2. Créer une Model Card
+          card = ModelCard.from_template(
+              model_id='diamond-price-model',
+              metrics=[{'name': 'RMSE', 'value': '${{ steps.eval.outputs.rmse }}'}]
+          )
+          card.save('./hf_model/README.md')
+
+          # 3. Pousser sur HF Hub
+          api = HfApi()
+          api.upload_folder(
+              folder_path='./hf_model',
+              repo_id='${{ secrets.HF_USERNAME }}/diamond-price-model',
+              token='${{ secrets.HF_TOKEN }}'
+          )
+          "
+        env:
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
+      # --- Étape 4 : Génération de documentation ---
+      - name: Generate documentation
+        run: |
+          mkdir ../docs
+          echo "# Documentation du modèle" > ../docs/index.md
+          echo "RMSE: ${{ steps.eval.outputs.rmse }}" >> ../docs/index.md
+          mkdocs build --site-dir ../docs
+          
+      - name: Deploy docs to GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
