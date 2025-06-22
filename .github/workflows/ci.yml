@@ -1,0 +1,49 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-train:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./src
+
+    steps:
+      # Étape 1 : Checkout du code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Étape 2 : Configuration de Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      # Étape 3 : Installer les dépendances
+      - name: Install dependencies
+        run: |
+          pip install -r ../requirements.txt
+          pip install torch sklearn pandas seaborn matplotlib
+
+      # Étape 4 : Exécuter le prétraitement des données
+      - name: Run data processing
+        run: python data_processing.py
+        env:
+          DATA_PATH: ../data/diamonds.csv
+
+      # Étape 5 : Entraîner le modèle
+      - name: Train model
+        run: python model_training.py
+        env:
+          MODEL_SAVE_PATH: ../models/diamond_price_predictor.pth
+
+      # Étape 6 : Évaluer le modèle
+      - name: Evaluate model
+        run: python model_evaluation.py
+        env:
+          MODEL_PATH: ../models/diamond_price_predictor.pth
