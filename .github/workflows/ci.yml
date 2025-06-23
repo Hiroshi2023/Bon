@@ -42,35 +42,12 @@ jobs:
       # --- Étape 3 : Déploiement sur Hugging Face ---
       - name: Deploy to Hugging Face
         if: github.ref == 'refs/heads/main'
-        run: |
-          python -c "
-          from huggingface_hub import HfApi, ModelCard
-          import torch
-          import joblib
-
-          # 1. Préparer le dossier du modèle
-          model = torch.load('../models/diamond_price_predictor.pth')
-          model.save_pretrained('./hf_model')
-          joblib.dump(scaler, './hf_model/scaler.joblib')
-
-          # 2. Créer une Model Card
-          card = ModelCard.from_template(
-              model_id='diamond-price-model',
-              metrics=[{'name': 'RMSE', 'value': '${{ steps.eval.outputs.rmse }}'}]
-          )
-          card.save('./hf_model/README.md')
-
-          # 3. Pousser sur HF Hub
-          api = HfApi()
-          api.upload_folder(
-              folder_path='./hf_model',
-              repo_id='${{ secrets.HF_USERNAME }}/diamond-price-model',
-              token='${{ secrets.HF_TOKEN }}'
-          )
-          "
         env:
-          HF_USERNAME: ${{ secrets.HF_USERNAME }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
+          MODEL_REPO_NAME: ${{ secrets.MODEL_REPO_NAME }}
+        run: |
+          python huggingface_upload.py
 
       # --- Étape 4 : Génération de documentation ---
       - name: Generate documentation
